@@ -80,7 +80,6 @@ class Rewritery
             ?>
 
                 <p>Token Balance: <?php echo $balance; ?> coins</p>
-                <p>Stats: </p>
 
             <?php
         }

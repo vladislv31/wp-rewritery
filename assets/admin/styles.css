@@ -1,0 +1,14 @@
+.rewritery-content .tab-content {
+    padding-top: 30px;
+}
+
+.rewritery-content .rewritery-content__table {
+    border-collapse: collapse;
+    border: 1px solid #000;
+}
+
+.rewritery-content .rewritery-content__table td, .rewritery-content .rewritery-content__table th {
+    border: 1px solid #000;
+    padding: 10px;
+    font-size: 16px;
+}
