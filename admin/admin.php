@@ -33,7 +33,7 @@
 
         if ($stats) {
             echo '<table class="rewritery-content__table"><tbody>';
-            echo '<tr><th>Date</th><th>Characters number</th></tr>';
+            echo '<tr><th>Month</th><th>Characters number</th></tr>';
 
             foreach($stats as $key => $stat) {
                 echo '<tr><td>'.$key.'</td><td>'.$stat.'</td></tr>';
