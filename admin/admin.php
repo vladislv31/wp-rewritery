@@ -17,8 +17,8 @@
     <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
     <!-- Here are our tabs -->
     <nav class="nav-tab-wrapper">
-      <a href="?page=rewritery_settings" class="nav-tab <?php if($tab===null):?>nav-tab-active<?php endif; ?>">Settings</a>
-      <a href="?page=rewritery_settings&tab=statistics" class="nav-tab <?php if($tab==='statistics'):?>nav-tab-active<?php endif; ?>">Statistics</a>
+      <a href="?page=rewritery_settings" class="nav-tab <?php if($tab===null):?>nav-tab-active<?php endif; ?>">Настройки</a>
+      <a href="?page=rewritery_settings&tab=statistics" class="nav-tab <?php if($tab==='statistics'):?>nav-tab-active<?php endif; ?>">Статистика</a>
     </nav>
 
   <div class="tab-content">
@@ -33,7 +33,7 @@
 
         if ($stats) {
             echo '<table class="rewritery-content__table"><tbody>';
-            echo '<tr><th>Month</th><th>Characters number</th></tr>';
+            echo '<tr><th>Месяц</th><th>Кол-во символов</th></tr>';
 
             foreach($stats as $key => $stat) {
                 echo '<tr><td>'.$key.'</td><td>'.$stat.'</td></tr>';
@@ -41,7 +41,7 @@
 
             echo '</tbody></table>';
         } else {
-            echo 'Stats is clear...';
+            echo 'Пусто...';
         }
 
         break;

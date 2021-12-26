@@ -37,55 +37,69 @@ class Rewritery
 
         // register cron
         add_action('wp', [$this, 'cronstarter_activation']);
-        register_deactivation_hook (__FILE__, [$this, 'cronstarter_deactivate']);
+        register_deactivation_hook(__FILE__, [$this, 'rewritery_deactivate']);
         add_action('rewritery_cron_job', [$this, 'rewrite_cron_callback']);
         add_filter('cron_schedules', [$this, 'cron_add_minute']);
 
 
         // post list columns
         add_filter('manage_post_posts_columns', function($columns) {
-            return array_merge($columns, ['rewritery_status' => 'Rewritery - Status', 'rewritery_date' => 'Rewritery - Last Date']);
+            return array_merge($columns, ['rewritery_status' => 'Статус реврайта', 'rewritery_date' => 'Последний реврайт']);
         });
          
         add_action('manage_post_posts_custom_column', function($column_key, $post_id) {
             if ($column_key == 'rewritery_status') {
                 $status = get_post_meta($post_id, 'rewritery_status', true);
-                $status = $status ? $status : 'not rewritered';
+                $status = $status ? $status : 'не реврайчено';
                 echo ucfirst($status);
             } else if ($column_key == 'rewritery_date') {
                 $date = get_post_meta($post_id, 'rewritery_last_date', true);
-                $date = $date ? $date : 'Not rewritered yet';
+                $date = $date ? $date : 'Еще не реврайчено';
                 echo $date;
             }
         }, 1, 2);
 
         // post list actions
         add_filter('bulk_actions-edit-post', function($bulk_actions) {
-            $bulk_actions['rewritery-rewrite'] = 'Rewrite';
+            $bulk_actions['rewritery-rewrite'] = 'Зареврайтить';
             return $bulk_actions;
         });
 
         add_filter('handle_bulk_actions-edit-post', function($redirect_url, $action, $post_ids) {
             if ($action == 'rewritery-rewrite') {
+                $error = null;
+
                 foreach ($post_ids as $post_id) {
-                    $this->rewrite_post($post_id);
+                    $res = $this->rewrite_post($post_id);
+
+                    if ($res['error'] != null) {
+                        $error = $res['error'];
+                        break;
+                    }
                 }
-                $redirect_url = add_query_arg('rewritery-rewrite', count($post_ids), $redirect_url);
+
+                if ($error) {
+                    $redirect_url = add_query_arg('rewritery_bulk_error', $error, $redirect_url);
+                }
             }
             return $redirect_url;
         }, 10, 3);
 
         // error
 
-        // add_action( 'admin_notices', [$this, 'rewritery_error_notice'] );
+        add_action('admin_notices', [$this, 'rewritery_error_notice']);
     }
 
     function rewritery_error_notice() {
-        ?>
-        <div class="error">
-            <p>test</p>
-        </div>
-        <?php
+        if (isset($_REQUEST['rewritery_bulk_error'])) {
+            ?>
+
+                <div id="message" class="error">
+                    <p><?php echo $_REQUEST['rewritery_bulk_error']; ?></p>
+                </div>
+
+            <?php
+        }
     }
 
     public function enqueue_admin() {
@@ -100,7 +114,7 @@ class Rewritery
 
     public function add_admin_menu() {
         add_menu_page(
-            esc_html__('Rewritery Settings Page', 'rewritery'),
+            esc_html__('Настройки Rewritery', 'rewritery'),
             esc_html__('Rewritery', 'rewritery'),
             'manage_options',
             'rewritery_settings',
@@ -116,9 +130,9 @@ class Rewritery
 
     public function settings_init() {
         register_setting('rewritery_settings', 'rewritery_settings_options');
-        add_settings_section('rewritery_settings_section', esc_html__('Settings', 'rewritery'), [$this, 'settings_section_html'], 'rewritery_settings');
+        add_settings_section('rewritery_settings_section', 'Настройки', [$this, 'settings_section_html'], 'rewritery_settings');
 
-        add_settings_field('api_token', esc_html__('API Token', 'rewritery'), [$this, 'api_token_html'], 'rewritery_settings', 'rewritery_settings_section');
+        add_settings_field('api_token', 'API токен', [$this, 'api_token_html'], 'rewritery_settings', 'rewritery_settings_section');
     }
 
     public function settings_section_html() {
@@ -142,7 +156,7 @@ class Rewritery
 
             ?>
 
-                <p>Token Balance: <?php echo $balance; ?> coins</p>
+                <p>Баланс токена: <?php echo $balance; ?> монет</p>
 
             <?php
         }
@@ -150,24 +164,24 @@ class Rewritery
 
     public function post_meta_boxes() {
         add_meta_box(
-            'rewritery_metabox', // ID нашего метабокса
-            'Rewrite Settings', // заголовок
-            [$this, 'rewritery_metabox_callback'], // функция, которая будет выводить поля в мета боксе
-            'post', // типы постов, для которых его подключим
-            'normal', // расположение (normal, side, advanced)
-            'default' // приоритет (default, low, high, core)
+            'rewritery_metabox',
+            'Настройки реврайта',
+            [$this, 'rewritery_metabox_callback'],
+            'post',
+            'normal',
+            'default'
         );
     }
 
     public function rewritery_metabox_callback($post) {
         $id = $post->ID;
-        $status = get_post_meta($id, 'rewritery_status', true) ? get_post_meta($id, 'rewritery_status', true) : 'not rewritered';
+        $status = get_post_meta($id, 'rewritery_status', true) ? get_post_meta($id, 'rewritery_status', true) : 'не реврайчено';
 
         ?>
 
             <div class="rewritery-post-settings" id="rewritery_block">
-                <p>Rewrite Post Status: <b><?php echo $status; ?></b></p>
-                <a href="/wp-admin/admin-ajax.php?action=add-rewrite&post_id=<?php echo $id; ?>&redirect_url=<?php echo urlencode($_SERVER['REQUEST_URI']); ?>" class="components-button is-primary rewritery-add-button">Rewrite</a>
+                <p>Статус реврайта: <b><?php echo $status; ?></b></p>
+                <a href="/wp-admin/admin-ajax.php?action=add-rewrite&post_id=<?php echo $id; ?>&redirect_url=<?php echo urlencode($_SERVER['REQUEST_URI']); ?>" class="components-button is-primary rewritery-add-button">Зареврайтить</a>
                 <?php
 
                     $error = get_post_meta($id, 'rewritery_error', true);
@@ -195,10 +209,6 @@ class Rewritery
 
         if (get_post_status($id)) {
             $res = $this->rewrite_post($id);
-
-            echo '<pre>';
-            var_dump($res);
-            exit();
 
             if ($res['error'] != null) {
                 update_post_meta($id, 'rewritery_error', $res['error']);
@@ -268,7 +278,7 @@ class Rewritery
         } else {
             $rewrite_id = $res['result']['_id'];
             update_post_meta($id, 'rewritery_rewrite_id', $rewrite_id);
-            update_post_meta($id, 'rewritery_status', 'in process');
+            update_post_meta($id, 'rewritery_status', 'в процессе');
 
             return $res;
         }
@@ -285,7 +295,7 @@ class Rewritery
             'meta_query' => array(
                 array(
                     'key' => 'rewritery_status',
-                    'value' => 'in process',
+                    'value' => 'в процессе',
                     'compare' => '=',
                 )
             )
@@ -293,7 +303,7 @@ class Rewritery
 
         $query = new WP_Query($args);
 
-        echo '<pre>';
+        // echo '<pre>';
 
         while($query->have_posts()) {
             $query->the_post();
@@ -329,7 +339,7 @@ class Rewritery
                         wp_update_post(wp_slash(['ID' => $id, 'post_content' => $content]));
         
                         delete_post_meta($id, 'rewritery_rewrite_id');
-                        update_post_meta($id, 'rewritery_status', 'rewritered');
+                        update_post_meta($id, 'rewritery_status', 'зареврайчено');
                         update_post_meta($id, 'rewritery_last_date', current_time('d m Y H:i'));
                     }
                 }
@@ -350,9 +360,17 @@ class Rewritery
         }
     }
 
-    function cronstarter_deactivate() {	
+    function rewritery_deactivate() {	
         $timestamp = wp_next_scheduled('rewritery_cron_job');
         wp_unschedule_event($timestamp, 'rewritery_cron_job');
+
+        global $wpdb;
+
+        $table = $wpdb->prefix.'postmeta';
+
+        $wpdb->delete($table, array('meta_key' => 'rewritery_status'));
+        $wpdb->delete($table, array('meta_key' => 'rewritery_rewrite_id'));
+        $wpdb->delete($table, array('meta_key' => 'rewritery_error'));
     }
 
     function cron_add_minute($schedules) {
