@@ -29,7 +29,7 @@ class Rewritery
 
         // ajax actions
         add_action('wp_ajax_add-rewrite', [$this, 'add_rewrite_callback']);
-        // add_action('wp_ajax_rewrite-cron', [$this, 'rewrite_cron_callback']);
+        add_action('wp_ajax_rewrite-cron', [$this, 'rewrite_cron_callback']);
 
         // add_action('edit_post', [$this, 'change_rewritery_status'], 10, 2);
 
@@ -231,38 +231,58 @@ class Rewritery
         $content = $post->post_content;
 
         $doc = phpQuery::newDocument($content);
-        $paragraphs = $doc->find('p');
-        $lists = $doc->find('ul');
-        $titles = $doc->find('h1, h2, h3, h4, h5, h6');
-
         $blocks = [];
+        $images_html = [];
 
-        foreach ($titles as $t) {
-            $blocks[] = [
-                'type' => 'paragraph',
-                'data' => [
-                    'text' => pq($t)->text()
-                ]
-            ];
-        }
+        echo '<pre>';
 
-        foreach ($paragraphs as $p) {
-            $blocks[] = [
-                'type' => 'paragraph',
-                'data' => [
-                    'text' => pq($p)->text()
-                ]
-            ];
-        }
-
-        foreach ($lists as $l) {
-            $lis = pq($l)->find('li');
-
-            foreach ($lis as $li) {
+        foreach ($doc->find('*') as $el) {
+            if (in_array($el->tagName, ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])) {
+                $blocks[] = [
+                    'type' => 'header',
+                    'data' => [
+                        'text' => pq($el)->text(),
+                        'level' => str_replace('h', '', $el->tagName)
+                    ]
+                ];
+            } else if ($el->tagName == 'p') {
                 $blocks[] = [
                     'type' => 'paragraph',
                     'data' => [
-                        'text' => pq($li)->text()
+                        'text' => pq($el)->text()
+                    ]
+                ];
+            } else if (strpos(pq($el)->attr('class'), 'wp-block-image') !== false) {
+                $img = pq($el)->find('img');
+                
+                $images_html[] = (string)pq($el);
+                $blocks[] = [
+                    'type' => 'image',
+                    'data' => [
+                        'file' => [
+                            'url' => pq($img)->attr('src')
+                        ],
+                        'caption' => ''
+                    ]
+                ];
+            } else if (in_array($el->tagName, ['ul', 'ol'])) {
+                $style = 'ordered';
+                if ($el->tagName == 'ul') {
+                    $style = 'unordered';
+                }
+
+                $lis = pq($el)->find('li');
+                $items = [];
+
+                foreach ($lis as $li) {
+                    $items[] = pq($li)->text();
+                }
+
+                $blocks[] = [
+                    'type' => 'list',
+                    'data' => [
+                        'style' => $style,
+                        'items'=> $items
                     ]
                 ];
             }
@@ -279,6 +299,7 @@ class Rewritery
             $rewrite_id = $res['result']['_id'];
             update_post_meta($id, 'rewritery_rewrite_id', $rewrite_id);
             update_post_meta($id, 'rewritery_status', 'в процессе');
+            update_post_meta($id, 'rewritery_images_json', json_encode(str_replace('"', '\"', $images_html)));
 
             return $res;
         }
@@ -303,8 +324,6 @@ class Rewritery
 
         $query = new WP_Query($args);
 
-        // echo '<pre>';
-
         while($query->have_posts()) {
             $query->the_post();
             $id = get_the_ID();
@@ -312,33 +331,72 @@ class Rewritery
             $rewrite_id = get_post_meta($id, 'rewritery_rewrite_id', true);
             $rewrites = $api->getRewrite($rewrite_id);
 
+            // echo '<pre>';
             // var_dump($rewrites);
-            // wp_die();
+            // echo '</pre>';
 
-            $content = get_the_content();
-            $rewrites_data = [];
+            // exit();
 
             if ($rewrites != null) {
                 if ($rewrites['item'] != null) {
                     if ($rewrites['item']['status'] == 9) {
+                        $new_content = '';
+
+                        $images_json = get_post_meta($id, 'rewritery_images_json', true);
+                        $images_html = json_decode($images_json, true);
+                        $images_idx = 0;
+
                         foreach($rewrites['item']['blocks'] as $block) {
-                            $text = $block['data']['text'];
-                            $suggestion = $block['rewriteDataSuggestions'][0]['text'];
-                            $rewrites_data[] = [
-                                'text' => $text,
-                                'suggestion' => $suggestion
-                            ];
-                        }
-        
-                        foreach($rewrites_data as $d) {
-                            if ($d['suggestion'] != null) {
-                                $content = str_replace($d['text'], $d['suggestion'], $content);
+                            $type = $block['type'];
+                         
+                            if (in_array($type, ['header', 'paragraph', 'list', 'image'])) {
+                                if ($type == 'header') {
+                                    $tag = 'h'.$block['data']['level'];
+
+                                    $new_content .= '<'.$tag.'>';
+
+                                    if ($block['rewriteDataSuggestions']) {
+                                        $new_content .= $block['rewriteDataSuggestions'][0]['text'];
+                                    } else {
+                                        $new_content .= $block['data']['text'];
+                                    }
+
+                                    $new_content .= '</'.$tag.'>';
+                                } else if ($type == 'paragraph') {
+                                    $new_content .= '<p>';
+
+                                    if ($block['rewriteDataSuggestions']) {
+                                        $new_content .= $block['rewriteDataSuggestions'][0]['text'];
+                                    } else {
+                                        $new_content .= $block['data']['text'];
+                                    }
+
+                                    $new_content .= '</p>';
+                                } else if ($type == 'list') {
+                                    $items = $block['data']['items'];
+                                    if ($block['rewriteDataSuggestions']) {
+                                        $items = $block['rewriteDataSuggestions'][0]['items'];
+                                    }
+
+                                    $new_content .= '<ul>';
+
+                                    foreach ($items as $itm) {
+                                        $new_content .= '<li>';
+                                        $new_content .= $itm;
+                                        $new_content .= '</li>';
+                                    }
+
+                                    $new_content .= '</ul>';
+                                } else if ($type == 'image') {
+                                    $new_content .= $images_html[$images_idx++];
+                                }
                             }
                         }
                 
-                        wp_update_post(wp_slash(['ID' => $id, 'post_content' => $content]));
+                        wp_update_post(wp_slash(['ID' => $id, 'post_content' => $new_content]));
         
                         delete_post_meta($id, 'rewritery_rewrite_id');
+                        delete_post_meta($id, 'rewritery_images_json');
                         update_post_meta($id, 'rewritery_status', 'зареврайчено');
                         update_post_meta($id, 'rewritery_last_date', current_time('d m Y H:i'));
                     }
