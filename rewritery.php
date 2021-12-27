@@ -331,9 +331,9 @@ class Rewritery
             $rewrite_id = get_post_meta($id, 'rewritery_rewrite_id', true);
             $rewrites = $api->getRewrite($rewrite_id);
 
-            echo '<pre>';
-            var_dump($rewrites);
-            echo '</pre>';
+            // echo '<pre>';
+            // var_dump($rewrites);
+            // echo '</pre>';
 
             // exit();
 

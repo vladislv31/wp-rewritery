@@ -54,7 +54,7 @@ class API
         curl_setopt($ch, CURLOPT_POST, 1);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
             'token' => $this->token,
-            'targetLang' => 1,
+            'targetLang' => 'RU',
             'dataset' => 0,
             'power' => 0.5,
             'blocks' => $blocks
