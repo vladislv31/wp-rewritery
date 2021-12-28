@@ -29,7 +29,7 @@ class Rewritery
 
         // ajax actions
         add_action('wp_ajax_add-rewrite', [$this, 'add_rewrite_callback']);
-        add_action('wp_ajax_rewrite-cron', [$this, 'rewrite_cron_callback']);
+        // add_action('wp_ajax_rewrite-cron', [$this, 'rewrite_cron_callback']);
 
         // add_action('edit_post', [$this, 'change_rewritery_status'], 10, 2);
 
@@ -214,8 +214,7 @@ class Rewritery
                 update_post_meta($id, 'rewritery_error', $res['error']);
             }
 
-            $rd_url .= '#rewritery_block';
-            wp_redirect(get_site_url() . $rd_url);
+            wp_redirect(get_site_url().'/wp-admin/post.php?post='.$id.'&action=edit');
             exit();
         }
 
@@ -319,7 +318,9 @@ class Rewritery
                     'value' => 'в процессе',
                     'compare' => '=',
                 )
-            )
+            ),
+            'post_status' => 'any',
+            'post_type' => 'post'
          );
 
         $query = new WP_Query($args);
