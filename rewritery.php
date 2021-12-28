@@ -14,7 +14,16 @@ if (!function_exists('add_action')) die('Hhmmm.....');
 
 class Rewritery
 {
+
+    function replace_content($content)
+    {
+        $content = str_replace('&nbsp;', ' ',$content);
+        return $content;
+    }
+
     public function register() {
+        add_filter('the_content', [$this, 'replace_content']);
+
         // enqueue admin
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_front']);
@@ -29,7 +38,7 @@ class Rewritery
 
         // ajax actions
         add_action('wp_ajax_add-rewrite', [$this, 'add_rewrite_callback']);
-        // add_action('wp_ajax_rewrite-cron', [$this, 'rewrite_cron_callback']);
+        add_action('wp_ajax_rewrite-cron', [$this, 'rewrite_cron_callback']);
 
         // add_action('edit_post', [$this, 'change_rewritery_status'], 10, 2);
 
@@ -221,71 +230,80 @@ class Rewritery
         wp_die();
     }
 
+    public function recursion($doc, &$blocks, &$html) {
+        foreach (pq($doc)->find('*') as $el) {
+            if (pq($el)->text() == '') {
+                $this->recursion($el, $blocks, $content);
+            } else {
+                if (in_array($el->tagName, ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])) {
+                    $blocks[] = [
+                        'type' => 'header',
+                        'data' => [
+                            'text' => pq($el)->text(),
+                            'level' => str_replace('h', '', $el->tagName)
+                        ]
+                    ];
+
+                    $html = str_replace((string)(pq($el)), '<h' . str_replace('h', '', $el->tagName) . '>{{ header }}</h' . str_replace('h', '', $el->tagName) . '>', $html);
+                } else if ($el->tagName == 'p') {
+                    $blocks[] = [
+                        'type' => 'paragraph',
+                        'data' => [
+                            'text' => pq($el)->text()
+                        ]
+                    ];
+
+                    $html = str_replace((string)(pq($el)), '<p>{{ paragraph }}</p>', $html);
+                } else if (in_array($el->tagName, ['ul', 'ol'])) {
+                    $style = 'ordered';
+                    if ($el->tagName == 'ul') {
+                        $style = 'unordered';
+                    }
+        
+                    $lis = pq($el)->find('li');
+                    $items = [];
+        
+                    foreach ($lis as $li) {
+                        $items[] = pq($li)->text();
+                        $html = str_replace((string)(pq($li)), '<li>{{ list_item }}</li>', $html);
+                    }
+        
+                    $blocks[] = [
+                        'type' => 'list',
+                        'data' => [
+                            'style' => $style,
+                            'items'=> $items
+                        ]
+                    ];
+                }
+            }
+        }
+    }
+
     public function rewrite_post($id) {
         require_once plugin_dir_path(__FILE__).'libs/phpQuery.php';
 
         $options = get_option('rewritery_settings_options');
 
-        $post = get_post($id);
-        $content = $post->post_content;
-
+        $content_post = get_post($id);
+        $content = $content_post->post_content;
+        $content = apply_filters('the_content', $content);
+        $content = str_replace(']]>', ']]&gt;', $content);
+        
         $doc = phpQuery::newDocument($content);
+
         $blocks = [];
         $images_html = [];
 
-        echo '<pre>';
+        $this->recursion($doc, $blocks, $content);
 
-        foreach ($doc->find('*') as $el) {
-            if (in_array($el->tagName, ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])) {
-                $blocks[] = [
-                    'type' => 'header',
-                    'data' => [
-                        'text' => pq($el)->text(),
-                        'level' => str_replace('h', '', $el->tagName)
-                    ]
-                ];
-            } else if ($el->tagName == 'p') {
-                $blocks[] = [
-                    'type' => 'paragraph',
-                    'data' => [
-                        'text' => pq($el)->text()
-                    ]
-                ];
-            } else if (strpos(pq($el)->attr('class'), 'wp-block-image') !== false) {
-                $img = pq($el)->find('img');
-                
-                $images_html[] = (string)pq($el);
-                $blocks[] = [
-                    'type' => 'image',
-                    'data' => [
-                        'file' => [
-                            'url' => pq($img)->attr('src')
-                        ],
-                        'caption' => ''
-                    ]
-                ];
-            } else if (in_array($el->tagName, ['ul', 'ol'])) {
-                $style = 'ordered';
-                if ($el->tagName == 'ul') {
-                    $style = 'unordered';
-                }
+        // echo '<pre>';
+        // var_dump($blocks);
+        // echo '</pre>';
 
-                $lis = pq($el)->find('li');
-                $items = [];
+        // exit();
 
-                foreach ($lis as $li) {
-                    $items[] = pq($li)->text();
-                }
-
-                $blocks[] = [
-                    'type' => 'list',
-                    'data' => [
-                        'style' => $style,
-                        'items'=> $items
-                    ]
-                ];
-            }
-        }
+        // echo '<pre>';
 
         require_once plugin_dir_path(__FILE__).'api.php';
 
@@ -298,7 +316,7 @@ class Rewritery
             $rewrite_id = $res['result']['_id'];
             update_post_meta($id, 'rewritery_rewrite_id', $rewrite_id);
             update_post_meta($id, 'rewritery_status', 'в процессе');
-            update_post_meta($id, 'rewritery_images_json', json_encode(str_replace('"', '\"', $images_html)));
+            update_post_meta($id, 'rewritery_temp_content', $content);
 
             return $res;
         }
@@ -332,72 +350,69 @@ class Rewritery
             $rewrite_id = get_post_meta($id, 'rewritery_rewrite_id', true);
             $rewrites = $api->getRewrite($rewrite_id);
 
-            // echo '<pre>';
-            // var_dump($rewrites);
-            // echo '</pre>';
+            echo '<pre>';
+            var_dump($rewrites);
+            echo '</pre>';
 
             // exit();
 
             if ($rewrites != null) {
                 if ($rewrites['item'] != null) {
                     if ($rewrites['item']['status'] == 9) {
-                        $new_content = '';
+                        $temp_content = get_post_meta($id, 'rewritery_temp_content', true);
 
-                        $images_json = get_post_meta($id, 'rewritery_images_json', true);
-                        $images_html = json_decode($images_json, true);
-                        $images_idx = 0;
+                        echo $temp_content;
 
                         foreach($rewrites['item']['blocks'] as $block) {
                             $type = $block['type'];
                          
-                            if (in_array($type, ['header', 'paragraph', 'list', 'image'])) {
+                            if (in_array($type, ['header', 'paragraph', 'list'])) {
                                 if ($type == 'header') {
-                                    $tag = 'h'.$block['data']['level'];
-
-                                    $new_content .= '<'.$tag.'>';
-
                                     if ($block['rewriteDataSuggestions']) {
-                                        $new_content .= $block['rewriteDataSuggestions'][0]['text'];
+                                        $new_data = $block['rewriteDataSuggestions'][0]['text'];
                                     } else {
-                                        $new_content .= $block['data']['text'];
+                                        $new_data = $block['data']['text'];
                                     }
 
-                                    $new_content .= '</'.$tag.'>';
+                                    $pos = strpos($temp_content, '{{ header }}');
+                                    if ($pos !== false) {
+                                        $temp_content = substr_replace($temp_content, $new_data, $pos, strlen('{{ header }}'));
+                                    }
+
                                 } else if ($type == 'paragraph') {
-                                    $new_content .= '<p>';
-
                                     if ($block['rewriteDataSuggestions']) {
-                                        $new_content .= $block['rewriteDataSuggestions'][0]['text'];
+                                        $new_data = $block['rewriteDataSuggestions'][0]['text'];
                                     } else {
-                                        $new_content .= $block['data']['text'];
+                                        $new_data = $block['data']['text'];
                                     }
 
-                                    $new_content .= '</p>';
+                                    $pos = strpos($temp_content, '{{ paragraph }}');
+                                    if ($pos !== false) {
+                                        $temp_content = substr_replace($temp_content, $new_data, $pos, strlen('{{ paragraph }}'));
+                                    }
                                 } else if ($type == 'list') {
                                     $items = $block['data']['items'];
                                     if ($block['rewriteDataSuggestions']) {
                                         $items = $block['rewriteDataSuggestions'][0]['items'];
                                     }
 
-                                    $new_content .= '<ul>';
-
                                     foreach ($items as $itm) {
-                                        $new_content .= '<li>';
-                                        $new_content .= $itm;
-                                        $new_content .= '</li>';
+                                        $pos = strpos($temp_content, '{{ list_item }}');
+                                        if ($pos !== false) {
+                                            $temp_content = substr_replace($temp_content, $itm, $pos, strlen('{{ list_item }}'));
+                                        }
                                     }
-
-                                    $new_content .= '</ul>';
-                                } else if ($type == 'image') {
-                                    $new_content .= $images_html[$images_idx++];
                                 }
                             }
                         }
+
+                        // echo $temp_content;
+                        // exit();
                 
-                        wp_update_post(wp_slash(['ID' => $id, 'post_content' => $new_content]));
+                        wp_update_post(wp_slash(['ID' => $id, 'post_content' => $temp_content]));
         
                         delete_post_meta($id, 'rewritery_rewrite_id');
-                        delete_post_meta($id, 'rewritery_images_json');
+                        delete_post_meta($id, 'rewritery_temp_content');
                         update_post_meta($id, 'rewritery_status', 'зареврайчено');
                         update_post_meta($id, 'rewritery_last_date', current_time('d m Y H:i'));
                     }
