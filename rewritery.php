@@ -17,7 +17,7 @@ class Rewritery
 
     function replace_content($content)
     {
-        $content = str_replace('&nbsp;', ' ',$content);
+        $content = str_replace('&nbsp;', ' ', $content);
         return $content;
     }
 
@@ -244,7 +244,7 @@ class Rewritery
                         ]
                     ];
 
-                    $html = str_replace((string)(pq($el)), '<h' . str_replace('h', '', $el->tagName) . '>{{ header }}</h' . str_replace('h', '', $el->tagName) . '>', $html);
+                    $html = str_replace(htmlspecialchars(preg_replace('/\>\s+\</m', '><', (string)(pq($el)))), '<h' . str_replace('h', '', $el->tagName) . '>{{ header }}</h' . str_replace('h', '', $el->tagName) . '>', $html);
                 } else if ($el->tagName == 'p') {
                     $blocks[] = [
                         'type' => 'paragraph',
@@ -253,7 +253,7 @@ class Rewritery
                         ]
                     ];
 
-                    $html = str_replace((string)(pq($el)), '<p>{{ paragraph }}</p>', $html);
+                    $html = str_replace(htmlspecialchars(preg_replace('/\>\s+\</m', '><', (string)(pq($el)))), '<p>{{ paragraph }}</p>', $html);
                 } else if (in_array($el->tagName, ['ul', 'ol'])) {
                     $style = 'ordered';
                     if ($el->tagName == 'ul') {
@@ -265,7 +265,6 @@ class Rewritery
         
                     foreach ($lis as $li) {
                         $items[] = pq($li)->text();
-                        $html = str_replace((string)(pq($li)), '<li>{{ list_item }}</li>', $html);
                     }
         
                     $blocks[] = [
@@ -275,6 +274,12 @@ class Rewritery
                             'items'=> $items
                         ]
                     ];
+                    
+                    if ($style == 'ordered') {
+                        $html = str_replace(htmlspecialchars(preg_replace('/\>\s+\</m', '><', (string)(pq($el)))), '<ol>{{ list }}</ol>', $html);
+                    } else {
+                        $html = str_replace(htmlspecialchars(preg_replace('/\>\s+\</m', '><', (string)(pq($el)))), '<ul>{{ list }}</ul>', $html);
+                    }
                 }
             }
         }
@@ -290,20 +295,27 @@ class Rewritery
         $content = apply_filters('the_content', $content);
         $content = str_replace(']]>', ']]&gt;', $content);
         
+        $content = preg_replace('/\>\s+\</m', '><', $content);
+
         $doc = phpQuery::newDocument($content);
 
         $blocks = [];
         $images_html = [];
 
+        $content = htmlspecialchars($content);
         $this->recursion($doc, $blocks, $content);
 
         // echo '<pre>';
+
         // var_dump($blocks);
+
         // echo '</pre>';
 
-        // exit();
+        $content = htmlspecialchars_decode($content);
 
-        // echo '<pre>';
+        // echo $content;
+
+        // exit();
 
         require_once plugin_dir_path(__FILE__).'api.php';
 
@@ -350,12 +362,6 @@ class Rewritery
             $rewrite_id = get_post_meta($id, 'rewritery_rewrite_id', true);
             $rewrites = $api->getRewrite($rewrite_id);
 
-            echo '<pre>';
-            var_dump($rewrites);
-            echo '</pre>';
-
-            // exit();
-
             if ($rewrites != null) {
                 if ($rewrites['item'] != null) {
                     if ($rewrites['item']['status'] == 9) {
@@ -395,19 +401,20 @@ class Rewritery
                                     if ($block['rewriteDataSuggestions']) {
                                         $items = $block['rewriteDataSuggestions'][0]['items'];
                                     }
+                                    
+                                    $list_items_html = '';
 
                                     foreach ($items as $itm) {
-                                        $pos = strpos($temp_content, '{{ list_item }}');
-                                        if ($pos !== false) {
-                                            $temp_content = substr_replace($temp_content, $itm, $pos, strlen('{{ list_item }}'));
-                                        }
+                                        $list_items_html .= '<li>'.$itm.'</li>';
+                                    }
+                                    
+                                    $pos = strpos($temp_content, '{{ list }}');
+                                    if ($pos !== false) {
+                                        $temp_content = substr_replace($temp_content, $list_items_html, $pos, strlen('{{ list }}'));
                                     }
                                 }
                             }
                         }
-
-                        // echo $temp_content;
-                        // exit();
                 
                         wp_update_post(wp_slash(['ID' => $id, 'post_content' => $temp_content]));
         
